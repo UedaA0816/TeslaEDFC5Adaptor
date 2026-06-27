@@ -1,0 +1,6 @@
+{
+  // ワークスペース専用の zshrc を置くディレクトリを指定
+  "terminal.integrated.env.osx": {
+    "ZDOTDIR": "${workspaceFolder}/.vscode"
+  }
+}
