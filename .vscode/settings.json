@@ -2,5 +2,11 @@
   // ワークスペース専用の zshrc を置くディレクトリを指定
   "terminal.integrated.env.osx": {
     "ZDOTDIR": "${workspaceFolder}/.vscode"
+  },
+  "chat.tools.terminal.autoApprove": {
+    "/^cd /Users/akihiro/Workspaces/TeslaEDFC5Adaptor && pio run$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
   }
 }

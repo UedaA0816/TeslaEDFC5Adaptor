@@ -2,11 +2,22 @@
 // features/accel_mode/AccelMode.cpp
 // ============================================================
 
-#include "AccelMode.h"
 #include <Arduino.h>
 
-void AccelMode::onAccelModeUpdate(AccelModeType mode) {
-    applyMode(mode);
+#include "shared/features/AccelMode.h"
+#include "shared/gateway/ICanGateway.h"
+
+void AccelMode::setup() {
+    auto can = _container.Resolve<ICanGateway>();
+    can->addListener(filter_accel_mode(onAccelModeUpdate));
+};
+void AccelMode::loop() {
+    // ループ処理は不要
+}
+
+void AccelMode::onAccelModeUpdate(int mode) {
+    validateAccelMode(mode);
+    applyMode(static_cast<AccelModeType>(mode));
 }
 
 void AccelMode::applyMode(AccelModeType mode) {

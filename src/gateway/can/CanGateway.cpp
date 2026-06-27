@@ -2,10 +2,14 @@
 // gateway/can/CanGateway.cpp
 // ============================================================
 
-#include "CanGateway.h"
+#include <Arduino.h>
+
+#include "gateway/can/CanGateway.h"
 
 CanGateway::CanGateway(gpio_num_t txPin, gpio_num_t rxPin, gpio_num_t rsPin)
     : _txPin(txPin), _rxPin(rxPin), _rsPin(rsPin) {}
+
+void CanGateway::start() {}
 
 bool CanGateway::begin() {
     // トランシーバーを高速モードに設定（RS = LOW）
@@ -87,7 +91,6 @@ AccelModeType CanGateway::parseAccelMode(const twai_message_t& msg) {
     switch (msg.data[0] & 0x03) {
         case 0x01: return AccelModeType::CHILL;
         case 0x02: return AccelModeType::STANDARD;
-        case 0x03: return AccelModeType::SPORT;
         default:   return AccelModeType::UNKNOWN;
     }
 }
