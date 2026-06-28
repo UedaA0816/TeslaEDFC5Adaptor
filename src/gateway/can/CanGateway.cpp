@@ -9,8 +9,6 @@
 CanGateway::CanGateway(gpio_num_t txPin, gpio_num_t rxPin, gpio_num_t rsPin)
     : _txPin(txPin), _rxPin(rxPin), _rsPin(rsPin) {}
 
-void CanGateway::start() {}
-
 bool CanGateway::begin() {
     // トランシーバーを高速モードに設定（RS = LOW）
     pinMode(_rsPin, OUTPUT);
