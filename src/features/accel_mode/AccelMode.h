@@ -1,27 +1,26 @@
 #pragma once
 
-#include "DIContainer.h"
 #include "shared/ICanGateway.h"
 #include "shared/ICanListener.h"
-#include "shared/IFeature.h"
 #include "shared/IGpioGateway.h"
+#include "shared/ILifeCycle.h"
 #include "shared/TeslaSignals.h"
 
 // ============================================================
 // 加速モード → EDFC5 リレー / ステータス LED 制御 feature
-// CAN の加速モード更新を受けて外部入力リレーと LED を切り替える。
+// 必要な gateway はコンストラクタ注入で受け取る。
 // ============================================================
 
-class AccelMode : public ICanListener, public IFeature {
+class AccelMode : public ILifeCycle, public ICanListener {
   public:
-    explicit AccelMode(DIContainer& diContainer)
-        : IFeature(diContainer), _gpio(*diContainer.Resolve<IGpioGateway>()) {}
+    AccelMode(ICanGateway& can, IGpioGateway& gpio) : _can(can), _gpio(gpio) {}
 
-    void setup() override;
+    void begin() override { _can.addListener(this); }
     void loop() override {}
     void onAccelModeUpdate(AccelModeType mode) override;
 
   private:
     void applyMode(AccelModeType mode);
+    ICanGateway&  _can;
     IGpioGateway& _gpio;
 };

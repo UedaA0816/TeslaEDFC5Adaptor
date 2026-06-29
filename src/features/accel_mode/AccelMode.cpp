@@ -4,10 +4,6 @@
 
 #include "AccelMode.h"
 
-void AccelMode::setup() {
-    diContainer().Resolve<ICanGateway>()->addListener(this);
-}
-
 void AccelMode::onAccelModeUpdate(AccelModeType mode) {
     applyMode(mode);
 }

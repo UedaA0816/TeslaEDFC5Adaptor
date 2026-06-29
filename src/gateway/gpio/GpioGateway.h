@@ -7,6 +7,7 @@
 class GpioGateway : public IGpioGateway {
   public:
     void begin() override;
+    void loop() override {}  // 出力はイベント駆動のため周期処理なし
     void setSpeedPulse(float speedKmh) override;
     void setEdfc5Relay(bool ext1, bool ext2) override;
     void setLed(bool blue, bool yellow) override;

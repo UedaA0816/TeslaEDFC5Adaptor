@@ -6,24 +6,13 @@
 
 #include "app/App.h"
 
-App::App(DIContainer& container)
-    : _container(container),
-      _speedPulse(container),
-      _accelMode(container),
-      _features{ &_speedPulse, &_accelMode },
-      _can(container.Resolve<ICanGateway>()),
-      _gpio(container.Resolve<IGpioGateway>()) {}
-
 void App::setup() {
     Serial.begin(115200);
     delay(1500);
     Serial.println("\n=== RejsaCAN Tesla CAN × EDFC5 ===");
 
-    _gpio->begin();
-    _can->begin();
-
-    // feature が自身を CAN リスナーとして登録する
-    for (IFeature* f : _features) f->setup();
+    // gateway → feature の順に begin（feature.begin() の addListener が成立する順）
+    for (size_t i = 0; i < _count; ++i) _components[i]->begin();
 
     Serial.println("=== 初期化完了 ===");
     Serial.println("  時刻(ms)  |  CAN ID  | データ");
@@ -31,6 +20,5 @@ void App::setup() {
 }
 
 void App::loop() {
-    _can->update();
-    for (IFeature* f : _features) f->loop();
+    for (size_t i = 0; i < _count; ++i) _components[i]->loop();
 }

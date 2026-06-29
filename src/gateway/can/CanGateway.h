@@ -10,9 +10,9 @@ class CanGateway : public ICanGateway {
   public:
     CanGateway(gpio_num_t txPin, gpio_num_t rxPin, gpio_num_t rsPin);
 
-    bool begin() override;
+    void begin() override;
     bool addListener(ICanListener* listener) override;
-    void update() override;
+    void loop() override;
 
   private:
     float parseVehicleSpeed(const twai_message_t& msg);

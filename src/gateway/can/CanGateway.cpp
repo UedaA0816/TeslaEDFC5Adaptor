@@ -9,7 +9,7 @@
 CanGateway::CanGateway(gpio_num_t txPin, gpio_num_t rxPin, gpio_num_t rsPin)
     : _txPin(txPin), _rxPin(rxPin), _rsPin(rsPin) {}
 
-bool CanGateway::begin() {
+void CanGateway::begin() {
     // トランシーバーを高速モードに設定（RS = LOW）
     pinMode(_rsPin, OUTPUT);
     digitalWrite(_rsPin, LOW);
@@ -22,14 +22,13 @@ bool CanGateway::begin() {
 
     if (twai_driver_install(&g, &t, &f) != ESP_OK) {
         Serial.println("[CAN] ドライバーインストール失敗");
-        return false;
+        return;
     }
     if (twai_start() != ESP_OK) {
         Serial.println("[CAN] 起動失敗");
-        return false;
+        return;
     }
     Serial.println("[CAN] 起動完了 ✓ 500kbps / Listen Only");
-    return true;
 }
 
 bool CanGateway::addListener(ICanListener* listener) {
@@ -38,7 +37,7 @@ bool CanGateway::addListener(ICanListener* listener) {
     return true;
 }
 
-void CanGateway::update() {
+void CanGateway::loop() {
     twai_message_t msg;
     if (twai_receive(&msg, pdMS_TO_TICKS(5)) != ESP_OK) return;
 
