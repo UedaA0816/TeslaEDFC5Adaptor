@@ -11,8 +11,8 @@ void App::setup() {
     delay(1500);
     Serial.println("\n=== RejsaCAN Tesla CAN × EDFC5 ===");
 
-    // gateway → feature の順に begin（feature.begin() の addListener が成立する順）
-    for (size_t i = 0; i < _count; ++i) _components[i]->begin();
+    // 登録順に begin（gateway → feature の順に初期化される）
+    for (auto* c : _components) c->begin();
 
     Serial.println("=== 初期化完了 ===");
     Serial.println("  時刻(ms)  |  CAN ID  | データ");
@@ -20,5 +20,5 @@ void App::setup() {
 }
 
 void App::loop() {
-    for (size_t i = 0; i < _count; ++i) _components[i]->loop();
+    for (auto* c : _components) c->loop();
 }

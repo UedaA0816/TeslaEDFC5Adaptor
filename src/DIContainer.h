@@ -5,7 +5,11 @@
 #pragma once
 #include <functional>
 #include <memory>
+#include <type_traits>
 #include <unordered_map>
+#include <vector>
+
+#include "shared/ILifeCycle.h"
 //-----------------------------------------------------
 //! @enum Lifecycle
 //! @brief サービスのライフサイクル種別
@@ -22,6 +26,7 @@ private:
     std::unordered_map<const void*, std::shared_ptr<void>> singletons_; ///< Singleton管理用マップ
     std::unordered_map<const void*, Lifecycle> lifecycles_;             ///< 登録時のライフサイクル
     std::unordered_map<const void*, ServiceFactory> factories_;         ///< 登録済みファクトリ
+    std::vector<ILifeCycle*> components_;                               ///< ILifeCycle登録順リスト
 
     template<typename T>
     static const void* TypeKey() {
@@ -60,6 +65,31 @@ public:
             return std::static_pointer_cast<void>(factory());
         });
     }
+
+    //-----------------------------------------------------
+    //! @brief ILifeCycle コンポーネントとして登録する（自動収集）
+    //! @details 登録順に components() へ追加される。begin/loop 駆動順を制御できる。
+    //-----------------------------------------------------
+    template<typename TService, typename TImplementation = TService>
+    void AddComponent() {
+        static_assert(std::is_base_of<ILifeCycle, TService>::value,
+                      "AddComponent: TService must implement ILifeCycle");
+        Register<TService, TImplementation>(Lifecycle::Singleton);
+        components_.push_back(static_cast<ILifeCycle*>(Resolve<TService>().get()));
+    }
+
+    template<typename TService>
+    void AddComponent(std::function<std::shared_ptr<TService>()> factory) {
+        static_assert(std::is_base_of<ILifeCycle, TService>::value,
+                      "AddComponent: TService must implement ILifeCycle");
+        Register<TService>(Lifecycle::Singleton, factory);
+        components_.push_back(static_cast<ILifeCycle*>(Resolve<TService>().get()));
+    }
+
+    //-----------------------------------------------------
+    //! @brief 登録順の ILifeCycle コンポーネント一覧を返す
+    //-----------------------------------------------------
+    const std::vector<ILifeCycle*>& components() const { return components_; }
 
     //-----------------------------------------------------
     //! @brief サービスを解決（インスタンスを取得）する
