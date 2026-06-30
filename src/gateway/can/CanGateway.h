@@ -15,6 +15,11 @@ class CanGateway : public ICanGateway {
     void loop() override;
 
   private:
+    // 受信専用タスク本体。トランポリン経由で this を受け取り無限ループする。
+    static void rxTaskThunk(void* arg);
+    void rxTask();
+    void processMessage(const twai_message_t& msg);
+
     float parseVehicleSpeed(const twai_message_t& msg);
     AccelModeType parseAccelMode(const twai_message_t& msg);
     void notifySpeed(float kmh);
@@ -24,6 +29,12 @@ class CanGateway : public ICanGateway {
     gpio_num_t _txPin;
     gpio_num_t _rxPin;
     gpio_num_t _rsPin;
+
+    // CAN 受信タスク設定（Arduino loop はコア1 / 優先度1 → 受信はコア0で分離）
+    static constexpr uint32_t RX_TASK_STACK    = 4096;
+    static constexpr UBaseType_t RX_TASK_PRIO  = 10;
+    static constexpr BaseType_t  RX_TASK_CORE   = 0;
+    TaskHandle_t _rxTaskHandle = nullptr;
 
     static constexpr uint8_t MAX_LISTENERS = 8;
     ICanListener* _listeners[MAX_LISTENERS]{};

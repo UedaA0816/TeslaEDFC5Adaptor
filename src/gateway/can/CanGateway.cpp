@@ -29,6 +29,17 @@ void CanGateway::begin() {
         return;
     }
     Serial.println("[CAN] 起動完了 ✓ 500kbps / Listen Only");
+
+    // 受信を専用タスクへ分離（コア0）。loop() ポーリングをやめ、
+    // twai_receive のブロッキング待ちで高負荷時の取りこぼしを防ぐ。
+    BaseType_t ok = xTaskCreatePinnedToCore(
+        rxTaskThunk, "can_rx", RX_TASK_STACK, this,
+        RX_TASK_PRIO, &_rxTaskHandle, RX_TASK_CORE
+    );
+    if (ok != pdPASS) {
+        _rxTaskHandle = nullptr;
+        Serial.println("[CAN] 受信タスク生成失敗");
+    }
 }
 
 bool CanGateway::addListener(ICanListener* listener) {
@@ -37,10 +48,25 @@ bool CanGateway::addListener(ICanListener* listener) {
     return true;
 }
 
-void CanGateway::loop() {
-    twai_message_t msg;
-    if (twai_receive(&msg, pdMS_TO_TICKS(5)) != ESP_OK) return;
+// loop() は空。受信は rxTask() が専用タスクで回す（begin() で生成）。
+void CanGateway::loop() {}
 
+// ── 受信タスク（コア0 で常駐）─────────────────────────────────
+void CanGateway::rxTaskThunk(void* arg) {
+    static_cast<CanGateway*>(arg)->rxTask();
+}
+
+void CanGateway::rxTask() {
+    twai_message_t msg;
+    for (;;) {
+        // 100ms タイムアウトで待機。無通信時はタスクが眠り CPU を消費しない。
+        if (twai_receive(&msg, pdMS_TO_TICKS(100)) == ESP_OK) {
+            processMessage(msg);
+        }
+    }
+}
+
+void CanGateway::processMessage(const twai_message_t& msg) {
     _rxCount++;
     updateRxRate();
 
