@@ -13,10 +13,12 @@ Human reference (verbose, JA): `CLAUDE_ja.md`.
 - `src/` on include path → `#include "shared/..."` works.
 
 ## Architecture
-- Layers: shared (types/IF) ← gateway (I/O) ← feature (logic). DI via `DIContainer`.
+- Layers: shared (types/IF) ← gateway (I/O) ← feature (logic). DI via `DIContainer` (Singleton 専用).
 - Feature → gateway only (interface). No feature↔feature deps.
-- CAN notify: feature implements `ICanListener`, registers in `setup()` via `addListener(this)`.
-- `main.cpp`: DI register + drive `can->begin/update`, `gpio->begin`, `feature->setup/loop`.
+- CAN notify: feature implements `ICanListener`, registers in `begin()` via `addListener(this)`.
+- CAN 受信は専用 FreeRTOS タスク（コア0常駐）。`CanGateway::begin()` でタスク起動、`loop()` は空。
+- listener コールバックはコア0で直接実行される。非ブロッキング・短時間に実装すること（コア1側からの GPIO 操作禁止）。
+- `main.cpp`: DI register + drive `can->begin`, `gpio->begin`, `feature->begin/loop`.
 
 ## CAN (500kbps, LISTEN_ONLY)
 - Speed: ID `0x257`, bits[12:23], ×0.08 −40.0 → kph. Confirmed.
@@ -29,10 +31,6 @@ Human reference (verbose, JA): `CLAUDE_ja.md`.
 
 ## Mode → EDFC5 (`AccelMode::applyMode`)
 - Chill → EXT2 on, LED blue. Standard → both off, LED blue+yellow. Sport → EXT1 on, LED yellow.
-
-## Excluded (Phase 2)
-- `gateway/wifi/`, `features/dashboard/` off via `build_src_filter`. Sources kept.
-- `lib_deps` ESP Async WebServer commented (explicit dep = compiled even if unused).
 
 ## TODO (after hardware)
 - `CAN_MODE_ID` + `parseAccelMode()` bits.

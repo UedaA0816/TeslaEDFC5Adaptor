@@ -1,6 +1,6 @@
 //-----------------------------------------------------
 //! @file DIContainer.h
-//! @brief DIコンテナの実装
+//! @brief DIコンテナの実装（Singleton 専用）
 //-----------------------------------------------------
 #pragma once
 #include <functional>
@@ -10,23 +10,16 @@
 #include <vector>
 
 #include "shared/ILifeCycle.h"
-//-----------------------------------------------------
-//! @enum Lifecycle
-//! @brief サービスのライフサイクル種別
-//-----------------------------------------------------
-enum class Lifecycle { Transient, Singleton };
 
 //-----------------------------------------------------
-//! @brief DIコンテナクラス
+//! @brief DIコンテナクラス（全サービスは Singleton）
 //-----------------------------------------------------
 class DIContainer {
 private:
     using ServiceFactory = std::function<std::shared_ptr<void>()>;
 
-    std::unordered_map<const void*, std::shared_ptr<void>> singletons_; ///< Singleton管理用マップ
-    std::unordered_map<const void*, Lifecycle> lifecycles_;             ///< 登録時のライフサイクル
-    std::unordered_map<const void*, ServiceFactory> factories_;         ///< 登録済みファクトリ
-    std::vector<ILifeCycle*> components_;                               ///< ILifeCycle登録順リスト
+    std::unordered_map<const void*, std::shared_ptr<void>> singletons_; ///< Singleton 管理用マップ
+    std::vector<ILifeCycle*> components_;                               ///< ILifeCycle 登録順リスト
 
     template<typename T>
     static const void* TypeKey() {
@@ -34,38 +27,15 @@ private:
         return &marker;
     }
 
+    //-----------------------------------------------------
+    //! @brief 内部登録：ファクトリを即時実行して Singleton として保持する
+    //-----------------------------------------------------
     template<typename TService>
-    void RegisterInternal(Lifecycle life, const ServiceFactory& factory) {
-        const void* serviceType = TypeKey<TService>();
-
-        lifecycles_[serviceType] = life;
-        factories_[serviceType] = factory;
-
-        if (life == Lifecycle::Singleton) {
-            singletons_[serviceType] = factory();
-        }
+    void RegisterSingleton(const ServiceFactory& factory) {
+        singletons_[TypeKey<TService>()] = factory();
     }
 
 public:
-    //-----------------------------------------------------
-    //! @brief サービスを登録する
-    //! @tparam T 登録する型
-    //! @param life ライフサイクル（Transient / Singleton）
-    //-----------------------------------------------------
-    template<typename TService, typename TImplementation = TService>
-    void Register(Lifecycle life = Lifecycle::Transient) {
-        RegisterInternal<TService>(life, []() {
-            return std::static_pointer_cast<void>(std::make_shared<TImplementation>());
-        });
-    }
-
-    template<typename TService>
-    void Register(Lifecycle life, std::function<std::shared_ptr<TService>()> factory) {
-        RegisterInternal<TService>(life, [factory]() {
-            return std::static_pointer_cast<void>(factory());
-        });
-    }
-
     //-----------------------------------------------------
     //! @brief ILifeCycle コンポーネントとして登録する（自動収集）
     //! @details 登録順に components() へ追加される。begin/loop 駆動順を制御できる。
@@ -74,7 +44,9 @@ public:
     void AddComponent() {
         static_assert(std::is_base_of<ILifeCycle, TService>::value,
                       "AddComponent: TService must implement ILifeCycle");
-        Register<TService, TImplementation>(Lifecycle::Singleton);
+        RegisterSingleton<TService>([]() {
+            return std::static_pointer_cast<void>(std::make_shared<TImplementation>());
+        });
         components_.push_back(static_cast<ILifeCycle*>(Resolve<TService>().get()));
     }
 
@@ -82,7 +54,9 @@ public:
     void AddComponent(std::function<std::shared_ptr<TService>()> factory) {
         static_assert(std::is_base_of<ILifeCycle, TService>::value,
                       "AddComponent: TService must implement ILifeCycle");
-        Register<TService>(Lifecycle::Singleton, factory);
+        RegisterSingleton<TService>([factory]() {
+            return std::static_pointer_cast<void>(factory());
+        });
         components_.push_back(static_cast<ILifeCycle*>(Resolve<TService>().get()));
     }
 
@@ -92,29 +66,16 @@ public:
     const std::vector<ILifeCycle*>& components() const { return components_; }
 
     //-----------------------------------------------------
-    //! @brief サービスを解決（インスタンスを取得）する
+    //! @brief 登録済み Singleton を解決して返す
     //! @tparam T 解決する型
-    //! @return インスタンス（ライフサイクルに応じて生成/共有）
+    //! @return 登録済みインスタンス（未登録の場合は空の shared_ptr）
     //-----------------------------------------------------
     template<typename T>
     std::shared_ptr<T> Resolve() {
-        const void* serviceType = TypeKey<T>();
-        auto it = lifecycles_.find(serviceType);
-
-        if (it != lifecycles_.end()) {
-            if (it->second == Lifecycle::Singleton) {
-                auto singletonIt = singletons_.find(serviceType);
-                if (singletonIt != singletons_.end()) {
-                    return std::static_pointer_cast<T>(singletonIt->second);
-                }
-            }
-
-            auto factoryIt = factories_.find(serviceType);
-            if (factoryIt != factories_.end()) {
-                return std::static_pointer_cast<T>(factoryIt->second());
-            }
+        auto it = singletons_.find(TypeKey<T>());
+        if (it != singletons_.end()) {
+            return std::static_pointer_cast<T>(it->second);
         }
-
         return std::shared_ptr<T>();
     }
 };

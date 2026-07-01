@@ -119,6 +119,8 @@ AccelModeType CanGateway::parseAccelMode(const twai_message_t& msg) {
 }
 
 // ── リスナー通知 ─────────────────────────────────────────────
+// ⚠️ この経路（コア0）からのみ GPIO を触る。ループ側（コア1）から GPIO を操作しないこと。
+// 将来 _signals を別コアから参照する場合はミューテックス保護を追加すること。
 void CanGateway::notifySpeed(float kmh) {
     for (uint8_t i = 0; i < _listenerCount; i++)
         _listeners[i]->onSpeedUpdate(kmh);
