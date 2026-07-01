@@ -3,6 +3,7 @@
 > このファイルは人間向けの詳細リファレンス。Claude が毎回読むのは英語版 `CLAUDE.md`。
 > トークン節約のため、AI 向けの指示は `CLAUDE.md`（簡潔・英語）に集約し、
 > 背景や経緯などの冗長な説明はこの `CLAUDE_ja.md` に置く。
+> アーキテクチャ変更時は両ファイルを同期すること。
 
 ---
 
@@ -32,7 +33,6 @@ GPIO 11  : LED_YELLOW
 GPIO 6   : RELAY_EXT1（EDFC5 外部入力1・Sport / ハード方向）← 暫定
 GPIO 7   : RELAY_EXT2（EDFC5 外部入力2・Chill / ソフト方向）← 暫定
 GPIO 15  : SPEED_PULSE（車速 PWM 出力）← 暫定
-GPIO 16  : WIFI_BUTTON（WiFi オンデマンド起動・Phase 2）← 暫定
 ```
 
 ### Tesla 接続
@@ -60,33 +60,55 @@ DI_vehicleSpeed : ID=0x257, bits[12:23], scale=0.08, offset=-40.0, unit=kph  ✅
 ## ソフトウェアアーキテクチャ
 
 ### 設計方針
-- **Gateway**: I/O 責任（CAN 受信・GPIO 出力・WiFi）
+- **Gateway**: I/O 責任（CAN 受信・GPIO 出力）
 - **Feature**: ビジネスロジックのみ（ハード依存ゼロ）
 - **Shared**: 型・インターフェース定義
 - **依存の方向**: Feature → Gateway（DI／インターフェース経由・逆方向なし）
 - **Feature 間の依存**: なし
 - **CAN 通知**: Feature が `ICanListener` を実装し `CanGateway::addListener()` で登録、コールバックを受ける
+- **DI コンテナ**: Singleton 専用（`AddComponent` / `Resolve` のみ公開）
 
-### ディレクトリ構成（実装済み）
+### CAN 受信の並行性
+- CAN 受信は専用 FreeRTOS タスク（コア0常駐）で実行。`CanGateway::begin()` でタスクを起動し、`loop()` は空。
+- listener コールバック（`onSpeedUpdate` / `onAccelModeUpdate`）はコア0のコンテキストで直接実行される。
+- **⚠️ コントラクト**: 実装は非ブロッキング・短時間（GPIO 書き込み程度）に留めること。重い処理はキュー経由にする。
+- GPIO 書き込みはこの経路（コア0）に一元化。コア1（Arduino loop）から GPIO を操作すると競合するため禁止。
+- 将来 `_signals` 等を別コアから読む場合（旧 dashboard 機能など）はミューテックス保護が必要。
+
+### ディレクトリ構成
 ```
 src/
-├── main.cpp                          # 初期化・DI 登録・gateway begin/update 駆動
-├── DIContainer.h                     # 簡易 DI コンテナ
+├── main.cpp                             # Arduino setup/loop → IApp に橋渡し
+├── DIContainer.h                        # 簡易 DI コンテナ（Singleton 専用）
+├── app/
+│   ├── App.{h,cpp}                      # ILifeCycle 一括 begin/loop ランナー
+│   └── CompositionRoot.{h,cpp}          # board 固有の配線（ピン・DI 登録）
 ├── shared/
-│   ├── TeslaSignals.h                # AccelModeType・accelModeStr()・TeslaSignals
-│   ├── ICanListener.h                # CAN 通知 IF（デフォルト空実装の virtual）
-│   ├── ICanGateway.h                 # begin / addListener / update
-│   ├── IGpioGateway.h                # begin / setSpeedPulse / setEdfc5Relay / setLed
-│   └── IFeature.h                    # setup / loop + diContainer()
+│   ├── TeslaSignals.h                   # AccelModeType・accelModeStr()・TeslaSignals
+│   ├── ICanListener.h                   # CAN 通知 IF（コア0実行コントラクト明記）
+│   ├── ICanGateway.h                    # begin / addListener
+│   ├── IGpioGateway.h                   # begin / setSpeedPulse / setEdfc5Relay / setLed
+│   ├── ILifeCycle.h                     # begin / loop 共通 IF
+│   ├── IApp.h                           # setup / loop 共通 IF
+│   └── GatewaySet.h                     # ICanGateway& + IGpioGateway& バンドル
 ├── gateway/
-│   ├── can/CanGateway.{h,cpp}        # TWAI 受信・パース・リスナー通知
-│   ├── gpio/GpioGateway.{h,cpp}      # LED・リレー・PWM 制御
-│   └── wifi/WifiGateway.{h,cpp}      # ★ビルド除外中（Phase 2）
+│   ├── GatewayInstaller.{h,cpp}         # gateway DI 登録集約
+│   ├── can/CanGateway.{h,cpp}           # TWAI 受信・パース・リスナー通知
+│   └── gpio/GpioGateway.{h,cpp}         # LED・リレー・PWM 制御
 └── features/
-    ├── speed_pulse/SpeedPulse.{h,cpp}   # 車速 → PWM パルス
-    ├── accel_mode/AccelMode.{h,cpp}     # 加速モード → リレー / LED
-    └── dashboard/Dashboard.{h,cpp}      # ★ビルド除外中（Phase 2）
+    ├── FeatureInstaller.{h,cpp}          # feature DI 登録集約
+    ├── speed_pulse/SpeedPulse.h          # 車速 → PWM パルス
+    └── accel_mode/AccelMode.{h,cpp}      # 加速モード → リレー / LED
+test/
+├── mock/
+│   ├── Arduino.h                         # ネイティブテスト用スタブ
+│   ├── MockCanGateway.h
+│   └── MockGpioGateway.h
+├── test_accel_mode/
+└── test_speed_pulse/
 ```
+
+> **wifi / dashboard について**: Phase 2 用に実装していたが、旧アーキ参照（`shared/IGateway.h` 等）で現行 IF と非互換のため削除済み。復活が必要な場合は git 履歴から参照し、`GatewaySet`/`ILifeCycle`/`ICanListener` に合わせて再実装すること。
 
 ### 加速モード → EDFC5 マッピング（`AccelMode::applyMode`）
 | モード | リレー | LED |
@@ -102,30 +124,25 @@ IDE        : VS Code + PlatformIO IDE 拡張機能
 ビルド env  : rejsacan-esp32s3（board: esp32-s3-devkitc-1）
 Arduino core: 2.0.17（LEDC は 2.x API: ledcSetup / ledcAttachPin / ledcChangeFrequency）
 ビルドフラグ : -DARDUINO_USB_MODE=1 -DARDUINO_USB_CDC_ON_BOOT=1
-ビルド      : pio run -e rejsacan-esp32s3 → ✅成功（RAM 5.8% / Flash 8.7%）
+単体テスト  : pio test -e native（AccelMode / SpeedPulse：native ランナー）
 ```
-
-### wifi / dashboard の扱い
-- Phase 2（WebApp）用にソースは温存しつつ、現在は `platformio.ini` の `build_src_filter` でビルド除外
-  （`-<gateway/wifi/>` `-<features/dashboard/>`）。
-- `lib_deps`（ESP Async WebServer）は**明示するとビルド対象になる**ため現在コメントアウト。
-  Phase 2 で wifi/dashboard を有効化する際に復活させる（コメント参照）。
 
 ---
 
 ## 実装フェーズ
 
-### Phase 1: Lチカ検証 + 中核ロジック（現在）
+### Phase 1: CAN 確認 + 中核ロジック（現在）
 - [x] アーキテクチャ実装（shared / gateway / feature）・ビルド成功
 - [x] CanGateway: 全 CAN メッセージのシリアルダンプ実装（モード ID 探索用）
-- [x] SpeedPulse / AccelMode 実装（リスナー登録・CAN ポーリング）
+- [x] SpeedPulse / AccelMode 実装（リスナー登録・CAN 受信タスク）
+- [x] 単体テスト（native）実装
 - [ ] RejsaCAN ボード到着確認・ピン検証
 - [ ] シリアルモニターで全 CAN メッセージダンプ → ID=0x257 で車速受信確認
 - [ ] 加速モード変更時に変化する CAN ID を特定 → `CAN_MODE_ID` / `parseAccelMode()` 実装
 
 ### Phase 2: WebApp
-- [ ] wifi / dashboard をビルド対象へ復帰（`build_src_filter` / `lib_deps` 戻し）
-- [ ] WiFi オンデマンド起動（GPIO16 ボタン）
+- [ ] WifiGateway / Dashboard を現行 IF（GatewaySet / ILifeCycle / ICanListener）に合わせて再実装
+- [ ] WiFi オンデマンド起動（ボタン GPIO）
 - [ ] http://192.168.4.1 でダッシュボード確認（速度・モードのリアルタイム更新）
 
 ### Phase 3: EDFC5 連携（EDFC5 購入後）
@@ -148,11 +165,6 @@ Arduino core: 2.0.17（LEDC は 2.x API: ledcSetup / ledcAttachPin / ledcChangeF
 - DI_vehicleSpeed は CSS Electronics 実走・ScanMyTesla で実証済み
 - 読み取り専用のため Tesla 保証リスクは最小限
 
-### WiFi 設計
-- 常時 AP は電波セキュリティ上不安なためオンデマンド方式を採用
-- 車両スリープ時は OBD2 Pin16 が電源断 → 自動シャットダウン
-- SSID hidden + パスワード保護
-
 ### EDFC5 GPS キット代替
 - TEIN GPS キット（¥13,200）は屋内・トンネルで信号ロスト問題あり
 - CAN 直読みの DI_vehicleSpeed（精度 0.08kph）で完全代替可能
@@ -169,4 +181,3 @@ Arduino core: 2.0.17（LEDC は 2.x API: ledcSetup / ledcAttachPin / ledcChangeF
 1. `CanGateway.h` の `CAN_MODE_ID = 0x000` → 実測 ID に変更、`parseAccelMode()` をビット仕様に合わせ実装
 2. `GpioGateway.cpp` の `PULSES_PER_KM = 4000.0f` → EDFC5 マニュアルで確認
 3. リレー / パルス用ピン（GPIO6,7,15）の確定・リレー極性確認
-4. Phase 2 で `WifiGateway.cpp` の `PASSWORD` を本番用に変更
